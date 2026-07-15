@@ -1,0 +1,18 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Juan Bau"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Monitor de temperaturas y ventilador para ThinkPad T490s",
+        "Icon": "temperature-symbolic",
+        "Id": "com.juanbau.t490ssensors",
+        "License": "GPL-3.0-or-later",
+        "Name": "Sensores T490s",
+        "Version": "0.1.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
