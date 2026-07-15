@@ -29,11 +29,13 @@ Diseñado originalmente para un Lenovo ThinkPad T490s y evolucionado hacia una d
 
 ## Vista previa
 
-Guardá una captura del widget en `docs/screenshot.png` para mostrarla aquí:
-
-```markdown
-![Sensores de hardware para KDE Plasma](docs/screenshot.png)
-```
+<p align="center">
+  <img
+    src="./docs/screenshot.png"
+    alt="Sensores de hardware para KDE Plasma"
+    width="420"
+  >
+</p>
 
 ## Arquitectura
 
