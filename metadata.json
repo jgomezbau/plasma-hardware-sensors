@@ -7,12 +7,12 @@
             }
         ],
         "Category": "System Information",
-        "Description": "Monitor de temperaturas y ventilador para ThinkPad T490s",
-        "Icon": "temperature-symbolic",
-        "Id": "com.juanbau.t490ssensors",
+        "Description": "Monitor de temperaturas, componentes y ventiladores del sistema",
+        "Icon": "utilities-system-monitor",
+        "Id": "com.juanbau.hardwaresensors",
         "License": "GPL-3.0-or-later",
-        "Name": "Sensores T490s",
-        "Version": "0.1.0"
+        "Name": "Sensores de hardware",
+        "Version": "0.2.0"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }
