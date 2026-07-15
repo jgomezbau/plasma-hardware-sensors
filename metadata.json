@@ -12,7 +12,9 @@
         "Id": "com.juanbau.hardwaresensors",
         "License": "GPL-3.0-or-later",
         "Name": "Sensores de hardware",
-        "Version": "0.2.0"
+        "Version": "0.2.0",
+        "Website": "https://github.com/jgomezbau/plasma-hardware-sensors",
+        "BugReportUrl": "https://github.com/jgomezbau/plasma-hardware-sensors/issues"        
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }
