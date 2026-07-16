@@ -11,6 +11,7 @@ Canvas {
     implicitHeight: 23
     antialiasing: true
 
+    onRpmChanged: requestPaint()
     onColorChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
@@ -18,8 +19,7 @@ Canvas {
     onPaint: {
         const context = getContext("2d")
         context.reset()
-        context.globalAlpha = 0.62
-
+        context.globalAlpha = root.rpm > 0 ? 0.62 : 0.35
 
         const size = Math.min(width, height)
         const unit = size * 0.245

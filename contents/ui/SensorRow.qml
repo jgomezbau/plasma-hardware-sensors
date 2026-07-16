@@ -9,6 +9,7 @@ RowLayout {
     property string iconName: "temperature-symbolic"
     property string label: ""
     property string value: ""
+    property string infoText: ""
     property color valueColor: Kirigami.Theme.textColor
 
     Layout.fillWidth: true
@@ -34,5 +35,10 @@ RowLayout {
         font.pixelSize: 15
         font.weight: Font.DemiBold
         color: row.valueColor
+    }
+
+    InfoButton {
+        infoText: row.infoText
+        Layout.alignment: Qt.AlignVCenter
     }
 }

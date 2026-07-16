@@ -1,4 +1,4 @@
-# Sensores de hardware para KDE Plasma
+# Plasma Hardware Sensors
 
 ![KDE Plasma](https://img.shields.io/badge/KDE%20Plasma-6-1D99F3?logo=kde&logoColor=white)
 ![Qt](https://img.shields.io/badge/Qt-6-41CD52?logo=qt&logoColor=white)
@@ -6,36 +6,34 @@
 ![Linux](https://img.shields.io/badge/Linux-hwmon-FCC624?logo=linux&logoColor=black)
 ![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue)
 
-Un plasmoide moderno para supervisar temperaturas y ventiladores directamente desde el escritorio de KDE Plasma 6.
+Plasmoide para KDE Plasma 6 que muestra temperaturas, frecuencias de núcleos y ventiladores publicados por el subsistema `hwmon` de Linux.
 
-Diseñado originalmente para un Lenovo ThinkPad T490s y evolucionado hacia una detección dinámica de hardware, el widget descubre los sensores publicados por el subsistema `hwmon` de Linux y adapta automáticamente su contenido al equipo donde se ejecuta.
+El proyecto nació para un Lenovo ThinkPad T490s, pero el backend detecta sensores de forma dinámica para funcionar en otros equipos siempre que el kernel publique la información correspondiente.
 
-> Compatible con sesiones Plasma sobre Wayland y X11. El servidor gráfico no interviene en la lectura de sensores.
-
-## Características
-
-- Temperatura principal del procesador con estado térmico por colores.
-- Gráfico de los últimos 60 valores registrados.
-- Temperatura máxima alcanzada durante la sesión del widget.
-- Vista desplegable con la temperatura de cada núcleo disponible.
-- Detección dinámica de CPU Intel y AMD.
-- Compatibilidad con temperaturas de GPU, chipset, NVMe, Wi-Fi, ACPI y firmware del equipo.
-- Detección de uno o varios ventiladores con velocidad en RPM.
-- Identificación automática del hostname y modelo DMI.
-- Límites térmicos calculados a partir de los valores críticos publicados por cada sensor.
-- Interfaz integrada con colores, tipografía e iconos del tema activo de Plasma.
-- Funcionamiento exclusivamente local, sin conexiones de red ni telemetría.
-- Lectura de sensores sin permisos de administrador.
+Estado de madurez: beta funcional. La lectura de sensores es local, no requiere privilegios de administrador y no modifica velocidades de ventilador ni valores de `hwmon`.
 
 ## Vista previa
 
 <p align="center">
   <img
     src="./docs/screenshot.png"
-    alt="Sensores de hardware para KDE Plasma"
+    alt="Plasma Hardware Sensors"
     width="420"
   >
 </p>
+
+## Funcionalidades
+
+- Temperatura principal de CPU con estado térmico por colores.
+- Historial visual de los últimos 60 valores de CPU.
+- Temperatura máxima alcanzada durante la sesión del widget.
+- Vista desplegable con temperaturas de núcleos y frecuencia en MHz cuando `cpufreq` está disponible.
+- Detección dinámica de sensores Intel, AMD, NVMe, ACPI, ThinkPad, Wi-Fi, chipset y GPU cuando aparecen en `hwmon`.
+- Lectura de uno o varios ventiladores con velocidad en RPM.
+- Identificación local de hostname y modelo DMI.
+- Umbrales térmicos basados en valores críticos del sensor cuando el kernel los publica.
+- Botones de información por lectura con dispositivo, etiqueta del kernel, entrada `hwmon` y límite crítico cuando existe.
+- Interfaz QML integrada con tema, tipografía e iconos de Plasma.
 
 ## Arquitectura
 
@@ -43,54 +41,67 @@ Diseñado originalmente para un Lenovo ThinkPad T490s y evolucionado hacia una d
 flowchart LR
     A[Linux hwmon] --> B[Backend Python]
     C[DMI del sistema] --> B
-    B --> D[JSON local]
-    D --> E[Plasmoide QML]
-    E --> F[Escritorio Plasma]
+    D[CPU cpufreq] --> B
+    B --> E[JSON local]
+    E --> F[Plasmoide QML]
+    F --> G[Escritorio Plasma]
 ```
-
-El proyecto está dividido en tres capas:
 
 | Capa | Tecnología | Responsabilidad |
 |---|---|---|
-| Sensores | Linux `hwmon` y DMI | Publicar temperaturas, límites críticos, ventiladores e identidad del equipo |
-| Backend | Python 3 y Bash | Descubrir, clasificar y normalizar sensores en JSON |
-| Interfaz | QML, Qt 6 y KDE Frameworks 6 | Representar valores, estados, gráficos y vistas desplegables |
+| Sensores | Linux `hwmon`, DMI y `cpufreq` | Exponer temperaturas, límites, RPM, identidad del equipo y frecuencia de CPU |
+| Backend | Python 3 y Bash | Descubrir, clasificar, validar y serializar sensores en JSON |
+| Interfaz | QML, Qt 6 y KDE Frameworks 6 | Representar valores, estados, gráfico, filas dinámicas y errores |
 
-## Estructura del proyecto
+## Estructura
 
 ```text
-t490s-sensors/
+plasma-hardware-sensors/
+├── .github/
+│   ├── ISSUE_TEMPLATE/
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── workflows/ci.yml
+├── contents/
+│   ├── scripts/
+│   │   ├── read-sensors.py
+│   │   └── read-sensors.sh
+│   └── ui/
+│       ├── FanIcon.qml
+│       ├── HistoryGraph.qml
+│       ├── InfoButton.qml
+│       ├── SensorRow.qml
+│       └── main.qml
+├── docs/screenshot.png
+├── scripts/
+│   ├── package.sh
+│   └── validate.sh
+├── tests/
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── SECURITY.md
 ├── metadata.json
-├── README.md
-└── contents/
-    ├── scripts/
-    │   ├── read-sensors.py
-    │   └── read-sensors.sh
-    └── ui/
-        ├── FanIcon.qml
-        ├── HistoryGraph.qml
-        ├── SensorRow.qml
-        └── main.qml
+└── pyproject.toml
 ```
 
-## Compatibilidad de sensores
+## Compatibilidad
 
-La disponibilidad final depende del hardware, el firmware y los controladores cargados por el kernel.
+La disponibilidad depende del hardware, firmware y controladores cargados.
 
-| Componente | Controladores o fuentes habituales | Estado |
+| Componente | Fuente habitual | Estado |
 |---|---|---|
-| CPU Intel | `coretemp` | Compatible |
-| CPU AMD | `k10temp`, `zenpower` | Compatible |
-| GPU AMD | `amdgpu` | Compatible si el controlador publica `hwmon` |
-| GPU NVIDIA | `nouveau` y sensores publicados por el controlador | Compatible si están disponibles |
+| CPU Intel | `coretemp`, `cpufreq` | Temperatura y frecuencia si están publicadas |
+| CPU AMD | `k10temp`, `zenpower`, `cpufreq` | Temperatura y frecuencia si están publicadas |
+| GPU AMD | `amdgpu` | Compatible si publica `hwmon` |
+| GPU NVIDIA | `nouveau` u otros sensores `hwmon` | Compatible si están disponibles |
 | NVMe | `nvme` | Compatible |
-| Chipset Intel | `pch_*` | Compatible |
+| Chipset | `pch_*` | Compatible |
 | Wi-Fi Intel | `iwlwifi` | Compatible |
 | ThinkPad | `thinkpad_acpi` | Temperaturas y RPM cuando el firmware las publica |
 | ACPI | `acpitz` | Compatible |
-| Otros dispositivos | Interfaz genérica `hwmon` | Detectables; la clasificación puede requerir ampliación |
+| Otros dispositivos | `hwmon` genérico | Detectables con clasificación genérica |
 
-Algunos fabricantes no publican la velocidad del ventilador en Linux. En esos equipos, el widget puede mostrar temperaturas correctamente aunque las RPM no estén disponibles.
+Algunos equipos no exponen RPM o frecuencia por núcleo. En ese caso el widget muestra los datos disponibles y omite los campos ausentes.
 
 ## Requisitos
 
@@ -98,10 +109,10 @@ Algunos fabricantes no publican la velocidad del ventilador en Linux. En esos eq
 - Qt 6 y KDE Frameworks 6.
 - Python 3.
 - Bash.
-- Soporte Plasma 5 Compatibility para el motor de datos ejecutable.
-- Sensores expuestos en `/sys/class/hwmon`.
+- Motor de datos ejecutable de Plasma 5 Support para Plasma 6.
+- Sensores disponibles en `/sys/class/hwmon`.
 
-En Debian y distribuciones derivadas, los paquetes relevantes son:
+En Debian y derivadas:
 
 ```bash
 sudo apt install \
@@ -111,143 +122,140 @@ sudo apt install \
   qml6-module-org-kde-plasma-plasma5support
 ```
 
-Para desarrollar y ejecutar el visor independiente:
+Para desarrollo y validación local:
 
 ```bash
-sudo apt install plasma-sdk
+sudo apt install plasma-sdk python3-pytest zip
 ```
 
-## Comprobar los sensores disponibles
+## Uso del backend
 
-Antes de instalar el widget, podés verificar qué publica el sistema:
-
-```bash
-sensors
-```
-
-También podés inspeccionar el JSON normalizado del backend:
+Ver el JSON normalizado:
 
 ```bash
 ./contents/scripts/read-sensors.sh | python3 -m json.tool
 ```
 
+Inspeccionar sensores publicados por el sistema:
+
+```bash
+sensors
+find -L /sys/class/hwmon -maxdepth 2 -type f -name '*_input' -print
+```
+
+Para pruebas o diagnósticos, el backend acepta raíces alternativas:
+
+```bash
+PLASMA_HARDWARE_SENSORS_HWMON_ROOT=/tmp/hwmon \
+PLASMA_HARDWARE_SENSORS_DMI_ROOT=/tmp/dmi \
+PLASMA_HARDWARE_SENSORS_CPU_ROOT=/tmp/cpu \
+./contents/scripts/read-sensors.sh
+```
+
 ## Instalación
 
-Cloná o descargá el proyecto y situate en su directorio raíz:
-
-```bash
-cd t490s-sensors
-```
-
-Asegurá los permisos de ejecución:
-
-```bash
-chmod +x contents/scripts/read-sensors.sh
-chmod +x contents/scripts/read-sensors.py
-```
-
-Instalá el plasmoide para el usuario actual:
+Desde la raíz del repositorio:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install .
 ```
 
-Después, en el escritorio:
+Después, añade el widget desde el modo de edición de Plasma buscando **Sensores de hardware**.
 
-1. Hacé clic derecho y seleccioná **Entrar en modo edición**.
-2. Elegí **Añadir elementos gráficos**.
-3. Buscá **Sensores de hardware**.
-4. Arrastrá el widget al escritorio o al panel.
-
-## Actualización
-
-Después de modificar o descargar una versión nueva:
+Actualizar una instalación existente:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --upgrade .
 ```
 
-Si Plasma mantiene recursos anteriores en memoria, reiniciá únicamente el shell gráfico:
+Desinstalar:
 
 ```bash
-plasmashell --replace &
-disown
-```
-
-## Desinstalación
-
-Retirá primero el widget del escritorio y ejecutá:
-
-```bash
-kpackagetool6 \
-  --type Plasma/Applet \
-  --remove com.juanbau.hardwaresensors
+kpackagetool6 --type Plasma/Applet --remove com.juanbau.hardwaresensors
 ```
 
 ## Desarrollo
 
-Probá el proyecto sin instalarlo:
+Ejecutar sin instalar:
 
 ```bash
 plasmoidviewer -a .
 ```
 
-Para conservar los mensajes de diagnóstico:
+Conservar mensajes de diagnóstico:
 
 ```bash
-plasmoidviewer -a . 2>&1 | tee /tmp/hardware-sensors.log
+plasmoidviewer -a . 2>&1 | tee /tmp/plasma-hardware-sensors.log
 ```
 
-El mensaje relacionado con `isScreenUiReady` puede provenir de `plasmoidviewer` en determinadas versiones de Plasma 6 y no necesariamente indica un fallo del widget.
+Validación completa:
 
-### Flujo de datos
+```bash
+./scripts/validate.sh
+```
 
-1. `read-sensors.sh` localiza y ejecuta el backend de forma independiente a la ruta de instalación.
-2. `read-sensors.py` recorre `/sys/class/hwmon` y consulta DMI.
-3. El backend clasifica los dispositivos y genera un único documento JSON.
-4. `main.qml` actualiza los valores periódicamente.
-5. Las filas se crean dinámicamente según los sensores disponibles.
+El script valida `metadata.json`, compila Python, ejecuta la suite de `pytest`, comprueba que el backend emite JSON válido y ejecuta una comprobación de metadatos con `kpackagetool6` cuando está disponible.
 
-## Estados térmicos
+## Pruebas
 
-Cuando un sensor publica un límite crítico, el widget calcula los estados en relación con ese límite:
+Ejecutar solo las pruebas:
 
-| Estado | Referencia aproximada |
-|---|---:|
-| Normal | Más de 25 °C por debajo del límite crítico |
-| Elevado | Entre 25 y 15 °C por debajo |
-| Alto | Entre 15 y 5 °C por debajo |
-| Crítico | A menos de 5 °C del límite crítico |
+```bash
+python3 -m pytest
+```
 
-Si el dispositivo no publica un límite, se aplican umbrales generales conservadores.
+Las pruebas construyen árboles `hwmon`, DMI y CPU falsos en directorios temporales para cubrir casos reales sin depender del hardware del equipo que ejecuta CI.
 
-Los colores son orientativos y no reemplazan los mecanismos de protección térmica del firmware o del kernel.
+## Empaquetado
 
-## Privacidad y seguridad
+Generar un paquete local:
 
-- El widget no utiliza Internet.
-- No recopila estadísticas ni telemetría.
-- No escribe en `hwmon` ni modifica la velocidad del ventilador.
-- No necesita ejecutarse como `root`.
-- Solamente lee archivos de sensores expuestos por el kernel.
-- El nombre y modelo del equipo permanecen en la sesión local de Plasma.
+```bash
+./scripts/package.sh
+```
+
+El resultado queda en `dist/`:
+
+```text
+dist/plasma-hardware-sensors-0.3.0.plasmoid
+dist/plasma-hardware-sensors-0.3.0.plasmoid.sha256
+```
+
+Instalar el paquete generado:
+
+```bash
+kpackagetool6 --type Plasma/Applet --install dist/plasma-hardware-sensors-0.3.0.plasmoid
+```
+
+## Versionado
+
+La versión del plasmoide está en `metadata.json`.
+
+Antes de preparar una release:
+
+```bash
+./scripts/validate.sh
+./scripts/package.sh
+```
+
+No hay publicación automática de releases configurada.
 
 ## Resolución de problemas
 
 ### El widget no muestra temperaturas
 
-Comprobá primero:
+Comprueba primero:
 
 ```bash
 sensors
 ./contents/scripts/read-sensors.sh | python3 -m json.tool
 ```
 
-Si `sensors` tampoco muestra el componente, puede faltar su módulo del kernel o el hardware puede no publicar ese dato.
+Si `sensors` tampoco muestra el componente, puede faltar un módulo del kernel o el hardware puede no publicar ese dato.
 
-### No aparecen las RPM
+### No aparecen RPM
 
-No todos los portátiles y placas base exponen RPM mediante `hwmon`. Verificá:
+No todos los fabricantes exponen RPM mediante `hwmon`:
 
 ```bash
 find -L /sys/class/hwmon \
@@ -256,9 +264,20 @@ find -L /sys/class/hwmon \
   -exec cat {} \;
 ```
 
+### No aparecen MHz por núcleo
+
+La frecuencia depende de `cpufreq`:
+
+```bash
+find /sys/devices/system/cpu \
+  -path '*/cpufreq/scaling_cur_freq' \
+  -print \
+  -exec cat {} \;
+```
+
 ### El widget no aparece en el selector
 
-Actualizá la instalación y reiniciá Plasma:
+Actualiza la instalación y reinicia Plasma:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --upgrade .
@@ -266,39 +285,23 @@ plasmashell --replace &
 disown
 ```
 
-### Verificar el identificador instalado
+## Seguridad y privacidad
 
-El identificador actual es:
+- No utiliza Internet.
+- No recopila telemetría.
+- No escribe en `hwmon`.
+- No cambia velocidades de ventilador.
+- No necesita ejecutarse como `root`.
+- El hostname y modelo DMI permanecen en la sesión local de Plasma.
 
-```text
-com.juanbau.hardwaresensors
-```
+Consulta [SECURITY.md](./SECURITY.md) para reportar vulnerabilidades.
 
-## Hoja de ruta
+## Contribución
 
-- Configuración gráfica de intervalos y umbrales.
-- Selección de sensores visibles.
-- Vista compacta optimizada para el panel.
-- Detalle desplegable para NVMe, GPU y otros componentes.
-- Históricos independientes por sensor.
-- Internacionalización mediante `i18n`.
-- Sustitución del motor de compatibilidad por un backend nativo de Plasma 6.
-- Empaquetado y publicación en KDE Store.
-
-## Contribuciones
-
-Los informes de hardware nuevo son especialmente útiles. Incluí, cuando sea posible:
-
-- Distribución y versión de Plasma.
-- Modelo del equipo.
-- Salida de `sensors`.
-- JSON generado por `read-sensors.sh`.
-- Captura del widget.
-
-Antes de compartir las salidas, revisá si contienen información que prefieras mantener privada, como hostname o modelo del dispositivo.
+Consulta [CONTRIBUTING.md](./CONTRIBUTING.md). Los informes de hardware nuevo son especialmente útiles si incluyen distribución, versión de Plasma, modelo, salida de `sensors` y JSON del backend.
 
 ## Licencia
 
-Este proyecto se distribuye bajo la licencia **GPL-3.0-or-later**.
+GPL-3.0-or-later. Consulta [LICENSE](./LICENSE).
 
 Copyright © 2026 Juan Bau.

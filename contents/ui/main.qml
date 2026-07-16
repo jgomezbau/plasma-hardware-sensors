@@ -8,12 +8,18 @@ import org.kde.plasma.plasma5support as Plasma5Support
 PlasmoidItem {
     id: root
 
+    property color normalTemperatureColor: "#45c45a"
+    property color elevatedTemperatureColor: "#ffb300"
+    property color highTemperatureColor: "#ff7043"
+    property color criticalTemperatureColor: "#ef5350"
+
     property string hostName: "Equipo"
     property string modelName: ""
 
     property real cpu: NaN
     property real cpuCritical: NaN
     property real maximumCpu: NaN
+    property var cpuSensor: null
 
     property var temperatureSensors: []
     property var visibleTemperatures: []
@@ -25,12 +31,27 @@ PlasmoidItem {
     property string lastUpdate: "--:--:--"
     property string errorMessage: ""
 
-    property string scriptPath: {
-        const url = Qt.resolvedUrl("../scripts/read-sensors.sh").toString()
-        return url.replace("file://", "")
+    property string scriptPath: localPathFromUrl(
+                                    Qt.resolvedUrl("../scripts/read-sensors.sh"))
+
+    property string command: "/usr/bin/env bash " + shellQuote(scriptPath)
+
+    function localPathFromUrl(url) {
+        const value = String(url)
+        const prefix = "file://"
+        const path = value.indexOf(prefix) === 0
+                ? value.slice(prefix.length) : value
+
+        return decodeURIComponent(path)
     }
 
-    property string command: "/usr/bin/env bash \"" + scriptPath + "\""
+    function shellQuote(value) {
+        return "'" + String(value).replace(/'/g, "'\\''") + "'"
+    }
+
+    function transparentColor(color, alpha) {
+        return Qt.rgba(color.r, color.g, color.b, alpha)
+    }
 
     function numericValue(value) {
         if (value === null || value === undefined)
@@ -56,27 +77,35 @@ PlasmoidItem {
                     Qt.locale(), "f", 0) + " RPM"
     }
 
+    function cpuFrequency(value) {
+        if (!Number.isFinite(value))
+            return ""
+
+        return Math.round(value).toLocaleString(
+                    Qt.locale(), "f", 0) + " MHz"
+    }
+
     function temperatureColor(value, critical) {
         if (!Number.isFinite(value))
             return Kirigami.Theme.disabledTextColor
 
         if (Number.isFinite(critical)) {
             if (value >= critical - 5000)
-                return "#ef5350"
+                return root.criticalTemperatureColor
             if (value >= critical - 15000)
-                return "#ff7043"
+                return root.highTemperatureColor
             if (value >= critical - 25000)
-                return "#ffb300"
-            return "#45c45a"
+                return root.elevatedTemperatureColor
+            return root.normalTemperatureColor
         }
 
         if (value >= 95000)
-            return "#ef5350"
+            return root.criticalTemperatureColor
         if (value >= 85000)
-            return "#ff7043"
+            return root.highTemperatureColor
         if (value >= 75000)
-            return "#ffb300"
-        return "#45c45a"
+            return root.elevatedTemperatureColor
+        return root.normalTemperatureColor
     }
 
     function statusText(value, critical) {
@@ -104,9 +133,9 @@ PlasmoidItem {
 
     function iconForSensor(sensor) {
         if (sensor.device === "acpitz")
-            return "preferences-system"
+            return "computer-symbolic"
         if (sensor.device === "thinkpad")
-            return "computer-laptop"
+            return "computer-laptop-symbolic"
 
         switch (sensor.category) {
         case "gpu":
@@ -118,10 +147,70 @@ PlasmoidItem {
         case "wifi":
             return "network-wireless"
         case "system":
-            return "preferences-system"
+            return "computer-symbolic"
         default:
             return "temperature-symbolic"
         }
+    }
+
+    function categoryLabel(category) {
+        switch (category) {
+        case "cpu": return "CPU"
+        case "cpu_core": return "Núcleo de CPU"
+        case "gpu": return "GPU"
+        case "chipset": return "Chipset"
+        case "storage": return "Almacenamiento"
+        case "wifi": return "Wi-Fi"
+        case "system": return "Sistema"
+        case "fan": return "Ventilador"
+        case "temperature": return "Temperatura"
+        default:
+            return category ? category : "Sensor"
+        }
+    }
+
+    function sensorInfo(sensor, kind) {
+        if (!sensor)
+            return ""
+
+        const lines = []
+        const category = sensor.category || (kind === "fan" ? "fan" : "temperature")
+        const index = Number(sensor.index)
+
+        lines.push(sensor.label || root.categoryLabel(category))
+        lines.push("Tipo: " + root.categoryLabel(category))
+
+        if (sensor.device)
+            lines.push("Dispositivo: " + sensor.device)
+
+        if (sensor.originalLabel && sensor.originalLabel !== sensor.label)
+            lines.push("Etiqueta del kernel: " + sensor.originalLabel)
+
+        if (Number.isFinite(index)) {
+            const prefix = kind === "fan" ? "fan" : "temp"
+            lines.push("Entrada: " + prefix + index + "_input")
+        }
+
+        if (kind === "fan") {
+            lines.push("RPM actuales: " + root.rpm(Number(sensor.rpm)))
+        } else {
+            const critical = root.numericValue(sensor.critical)
+
+            if (Number.isFinite(critical))
+                lines.push("Límite crítico: " + root.temperature(critical))
+            else
+                lines.push("Límite crítico: no publicado")
+        }
+
+        if (kind === "cpu_core") {
+            const frequency = Number(sensor.frequencyMHz)
+
+            if (Number.isFinite(frequency))
+                lines.push("Frecuencia actual: " + root.cpuFrequency(frequency))
+        }
+
+        lines.push("Fuente: /sys/class/hwmon")
+        return lines.join("\n")
     }
 
     function categoryPriority(category) {
@@ -170,7 +259,9 @@ PlasmoidItem {
                 label: sensor.label || "Temperatura",
                 value: value,
                 critical: numericValue(sensor.critical),
-                device: sensor.device || ""
+                device: sensor.device || "",
+                index: sensor.index,
+                originalLabel: sensor.originalLabel || ""
             })
         }
 
@@ -225,9 +316,16 @@ PlasmoidItem {
             if (primaryCpu !== null) {
                 cpu = numericValue(primaryCpu.value)
                 cpuCritical = numericValue(primaryCpu.critical)
+                cpuSensor = primaryCpu
             } else {
                 cpu = numericValue(values.cpu)
                 cpuCritical = NaN
+                cpuSensor = {
+                    category: "cpu",
+                    label: "CPU",
+                    value: values.cpu,
+                    critical: null
+                }
             }
 
             visibleTemperatures = prepareVisibleTemperatures(discoveredTemperatures)
@@ -295,10 +393,8 @@ PlasmoidItem {
                 implicitWidth: statusLabel.implicitWidth + 22
                 implicitHeight: 28
                 radius: 14
-                color: Qt.rgba(
-                    root.temperatureColor(root.cpu, root.cpuCritical).r,
-                    root.temperatureColor(root.cpu, root.cpuCritical).g,
-                    root.temperatureColor(root.cpu, root.cpuCritical).b,
+                color: root.transparentColor(
+                    root.temperatureColor(root.cpu, root.cpuCritical),
                     0.16
                 )
 
@@ -329,6 +425,15 @@ PlasmoidItem {
                 ColorAnimation { duration: 120 }
             }
 
+            MouseArea {
+                id: cpuMouseArea
+                anchors.fill: parent
+                enabled: root.coreSensors.length > 0
+                hoverEnabled: true
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: root.cpuExpanded = !root.cpuExpanded
+            }
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 14
@@ -357,6 +462,11 @@ PlasmoidItem {
                         font.pixelSize: 34
                         font.weight: Font.DemiBold
                         color: root.temperatureColor(root.cpu, root.cpuCritical)
+                    }
+
+                    InfoButton {
+                        infoText: root.sensorInfo(root.cpuSensor, "temperature")
+                        Layout.alignment: Qt.AlignVCenter
                     }
                 }
 
@@ -406,6 +516,7 @@ PlasmoidItem {
                             required property var modelData
                             Layout.fillWidth: true
                             Layout.preferredHeight: 28
+                            spacing: 14
 
                             PlasmaComponents.Label {
                                 text: modelData.label
@@ -414,26 +525,33 @@ PlasmoidItem {
                             }
 
                             PlasmaComponents.Label {
+                                visible: text !== ""
+                                text: root.cpuFrequency(Number(modelData.frequencyMHz))
+                                font.pixelSize: 12
+                                color: Kirigami.Theme.disabledTextColor
+                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: 72
+                            }
+
+                            PlasmaComponents.Label {
                                 text: root.temperature(Number(modelData.value))
                                 font.pixelSize: 13
                                 font.weight: Font.DemiBold
+                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: 58
                                 color: root.temperatureColor(
                                     Number(modelData.value),
                                     root.numericValue(modelData.critical)
                                 )
                             }
+
+                            InfoButton {
+                                infoText: root.sensorInfo(modelData, "cpu_core")
+                                Layout.alignment: Qt.AlignVCenter
+                            }
                         }
                     }
                 }
-            }
-
-            MouseArea {
-                id: cpuMouseArea
-                anchors.fill: parent
-                enabled: root.coreSensors.length > 0
-                hoverEnabled: true
-                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: root.cpuExpanded = !root.cpuExpanded
             }
         }
 
@@ -451,6 +569,7 @@ PlasmoidItem {
                     value: root.temperature(modelData.value)
                     valueColor: root.temperatureColor(
                         modelData.value, modelData.critical)
+                    infoText: root.sensorInfo(modelData, "temperature")
                 }
             }
         }
@@ -506,6 +625,11 @@ PlasmoidItem {
                             Layout.alignment: Qt.AlignRight
                         }
                     }
+
+                    InfoButton {
+                        infoText: root.sensorInfo(modelData, "fan")
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
             }
         }
@@ -539,6 +663,8 @@ PlasmoidItem {
         onNewData: function(sourceName, data) {
             if (data.stdout)
                 root.processOutput(data.stdout)
+            else if (data.stderr)
+                root.errorMessage = "No se pudieron leer los sensores"
             if (data.stderr)
                 console.warn("Sensores:", data.stderr)
         }

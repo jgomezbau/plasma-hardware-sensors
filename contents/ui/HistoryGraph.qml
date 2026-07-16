@@ -11,6 +11,7 @@ Canvas {
     antialiasing: true
 
     onValuesChanged: requestPaint()
+    onLineColorChanged: requestPaint()
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
 

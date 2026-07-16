@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a hardware detection, packaging or UI problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: input
+    id: plasma
+    attributes:
+      label: KDE Plasma version
+      placeholder: "6.x"
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: "Fedora, KDE neon, Arch, Debian..."
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware model
+  - type: textarea
+    id: sensors
+    attributes:
+      label: Sensor output
+      description: Paste relevant output from sensors and read-sensors.sh after removing anything private.
+      render: text
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Paste the output of ./scripts/validate.sh if relevant.
+      render: text

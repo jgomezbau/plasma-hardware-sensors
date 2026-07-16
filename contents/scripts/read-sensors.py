@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import re
 import socket
 from pathlib import Path
 
 
-HWMON_ROOT = Path("/sys/class/hwmon")
-DMI_ROOT = Path("/sys/class/dmi/id")
+def path_from_environment(variable: str, default: str) -> Path:
+    return Path(os.environ.get(variable, default))
+
+
+HWMON_ROOT = path_from_environment(
+    "PLASMA_HARDWARE_SENSORS_HWMON_ROOT",
+    "/sys/class/hwmon"
+)
+DMI_ROOT = path_from_environment(
+    "PLASMA_HARDWARE_SENSORS_DMI_ROOT",
+    "/sys/class/dmi/id"
+)
+CPU_ROOT = path_from_environment(
+    "PLASMA_HARDWARE_SENSORS_CPU_ROOT",
+    "/sys/devices/system/cpu"
+)
 
 
 def read_text(path: Path, default: str = "") -> str:
@@ -44,6 +59,81 @@ def normalize_identifier(value: str) -> str:
     value = value.lower()
     value = re.sub(r"[^a-z0-9]+", "-", value)
     return value.strip("-")
+
+
+def numbered_paths(root: Path, glob_pattern: str, name_pattern: str):
+    paths = []
+
+    try:
+        for path in root.glob(glob_pattern):
+            match = re.fullmatch(name_pattern, path.name)
+
+            if match:
+                paths.append((int(match.group(1)), path))
+    except OSError:
+        return []
+
+    return sorted(paths, key=lambda item: item[0])
+
+
+def core_number(label: str):
+    match = re.search(r"\bcore\s+(\d+)\b", label.lower())
+
+    if match:
+        return int(match.group(1))
+
+    return None
+
+
+def read_cpu_frequency_maps(cpu_root: Path = CPU_ROOT):
+    frequencies_by_cpu = {}
+    frequencies_by_core = {}
+
+    for cpu_index, cpu in numbered_paths(cpu_root, "cpu[0-9]*", r"cpu(\d+)"):
+        frequency = read_integer(cpu / "cpufreq" / "scaling_cur_freq")
+
+        if frequency is None or frequency <= 0:
+            frequency = read_integer(cpu / "cpufreq" / "cpuinfo_cur_freq")
+
+        if frequency is None or frequency <= 0:
+            continue
+
+        # cpufreq publica la frecuencia en kHz.
+        frequency_mhz = round(frequency / 1000)
+        frequencies_by_cpu[cpu_index] = frequency_mhz
+
+        core_id = read_integer(cpu / "topology" / "core_id")
+
+        if core_id is not None:
+            frequencies_by_core[core_id] = max(
+                frequency_mhz,
+                frequencies_by_core.get(core_id, 0)
+            )
+
+    return frequencies_by_cpu, frequencies_by_core
+
+
+def read_cpu_frequencies(cpu_root: Path = CPU_ROOT):
+    frequencies_by_cpu, _ = read_cpu_frequency_maps(cpu_root)
+    return frequencies_by_cpu
+
+
+def frequency_for_core(
+    label: str,
+    ordinal: int,
+    frequencies_by_cpu,
+    frequencies_by_core
+):
+    number = core_number(label)
+
+    if number is not None:
+        if number in frequencies_by_core:
+            return frequencies_by_core[number]
+
+        if number in frequencies_by_cpu:
+            return frequencies_by_cpu[number]
+
+    return frequencies_by_cpu.get(ordinal)
 
 
 def classify_temperature(device_name: str, label: str):
@@ -118,24 +208,33 @@ def fan_label(device_name: str, index: int, label: str) -> str:
     return f"Ventilador {index}"
 
 
-def discover_hwmon():
+def discover_hwmon(
+    hwmon_root: Path = HWMON_ROOT,
+    cpu_root: Path = CPU_ROOT
+):
     temperatures = []
     fans = []
+    cpu_frequencies, cpu_core_frequencies = read_cpu_frequency_maps(cpu_root)
+    cpu_core_count = 0
 
-    for hwmon in sorted(HWMON_ROOT.glob("hwmon*")):
+    for _, hwmon in numbered_paths(hwmon_root, "hwmon*", r"hwmon(\d+)"):
         device_name = read_text(hwmon / "name")
 
         if not device_name:
             continue
 
+        device_identifier = (
+            normalize_identifier(device_name)
+            or normalize_identifier(hwmon.name)
+            or "hwmon"
+        )
+
         # Temperaturas
-        for input_file in sorted(hwmon.glob("temp*_input")):
-            match = re.fullmatch(r"temp(\d+)_input", input_file.name)
-
-            if not match:
-                continue
-
-            index = int(match.group(1))
+        for index, input_file in numbered_paths(
+            hwmon,
+            "temp*_input",
+            r"temp(\d+)_input"
+        ):
             value = read_integer(input_file)
 
             if not valid_temperature(value):
@@ -158,10 +257,9 @@ def discover_hwmon():
             if not valid_temperature(critical):
                 critical = None
 
-            temperatures.append({
+            sensor = {
                 "id": (
-                    f"{normalize_identifier(device_name)}"
-                    f"-temp-{index}"
+                    f"{device_identifier}-temp-{index}"
                 ),
                 "device": device_name,
                 "index": index,
@@ -170,16 +268,29 @@ def discover_hwmon():
                 "originalLabel": label,
                 "value": value,
                 "critical": critical
-            })
+            }
+
+            if category == "cpu_core":
+                frequency = frequency_for_core(
+                    display_label,
+                    cpu_core_count,
+                    cpu_frequencies,
+                    cpu_core_frequencies
+                )
+
+                if frequency is not None:
+                    sensor["frequencyMHz"] = frequency
+
+                cpu_core_count += 1
+
+            temperatures.append(sensor)
 
         # Ventiladores
-        for input_file in sorted(hwmon.glob("fan*_input")):
-            match = re.fullmatch(r"fan(\d+)_input", input_file.name)
-
-            if not match:
-                continue
-
-            index = int(match.group(1))
+        for index, input_file in numbered_paths(
+            hwmon,
+            "fan*_input",
+            r"fan(\d+)_input"
+        ):
             rpm = read_integer(input_file)
 
             if rpm is None or rpm < 0:
@@ -189,8 +300,7 @@ def discover_hwmon():
 
             fans.append({
                 "id": (
-                    f"{normalize_identifier(device_name)}"
-                    f"-fan-{index}"
+                    f"{device_identifier}-fan-{index}"
                 ),
                 "device": device_name,
                 "index": index,
@@ -245,10 +355,10 @@ def cpu_cores(temperatures):
     return cores
 
 
-def get_model():
+def get_model(dmi_root: Path = DMI_ROOT):
     candidates = [
-        DMI_ROOT / "product_version",
-        DMI_ROOT / "product_name"
+        dmi_root / "product_version",
+        dmi_root / "product_name"
     ]
 
     invalid_values = {
@@ -267,12 +377,16 @@ def get_model():
     return socket.gethostname() or "Equipo"
 
 
-def main():
-    temperatures, fans = discover_hwmon()
+def collect_sensor_data(
+    hwmon_root: Path = HWMON_ROOT,
+    dmi_root: Path = DMI_ROOT,
+    cpu_root: Path = CPU_ROOT
+):
+    temperatures, fans = discover_hwmon(hwmon_root, cpu_root)
     cores = cpu_cores(temperatures)
 
     hostname = socket.gethostname() or "Equipo"
-    model = get_model()
+    model = get_model(dmi_root)
 
     cpu = first_temperature(temperatures, "cpu")
     chipset = first_temperature(temperatures, "chipset")
@@ -296,7 +410,7 @@ def main():
 
     # Los campos planos mantienen compatibilidad con main.qml.
     # temperatures y fans permitirán construir la interfaz universal.
-    result = {
+    return {
         "hostname": hostname,
         "model": model,
 
@@ -316,6 +430,10 @@ def main():
         "temperatures": temperatures,
         "fans": fans
     }
+
+
+def main():
+    result = collect_sensor_data()
 
     print(
         json.dumps(
